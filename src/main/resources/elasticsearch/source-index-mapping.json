@@ -1,0 +1,19 @@
+{
+  "mappings": {
+    "dynamic": "strict",
+    "properties": {
+      "group": {
+        "type": "keyword"
+      },
+      "name": {
+        "type": "keyword"
+      },
+      "url": {
+        "type": "keyword"
+      },
+      "index": {
+        "type": "keyword"
+      }
+    }
+  }
+}

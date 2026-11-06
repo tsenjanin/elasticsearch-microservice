@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration scan="true" scanPeriod="30 seconds">
+
+	<contextName>todo</contextName>
+	<property name="ROOT_DIR" value="src/main/resources/logs" />
+	<property name="MAIN_LOG" value="elasticsearch" />
+
+	<property name="PATTERN_DEFAULT"
+		value="{&quot;@timestamp&quot;:&quot;%d{&quot;yyyy-MM-dd'T'HH:mm:ss.SSSXXX&quot;}&quot;,&quot;log&quot;:{&quot;level&quot;:&quot;%level&quot;,&quot;logger&quot;:&quot;%logger&quot;},&quot;process&quot;:{&quot;thread&quot;:{&quot;name&quot;:&quot;%thread&quot;}},&quot;service&quot;:{&quot;name&quot;:&quot;%contextName&quot;},&quot;sid&quot;:&quot;%X{sid}&quot;,&quot;uid&quot;:&quot;%X{uid}&quot;,&quot;message&quot;:&quot;%replace(%replace(%replace(%replace(%message){'\\','\\\\'}){'&quot;','\\&quot;'}){'\t','\\t'}){'\r?\n','\\n'}&quot;,&quot;error&quot;:{&quot;stack_trace&quot;:&quot;%replace(%replace(%replace(%replace(%exception){'\\','\\\\'}){'&quot;','\\&quot;'}){'\t','\\t'}){'\r?\n','\\n'}&quot;},&quot;ecs&quot;:{&quot;version&quot;:&quot;8.11&quot;}}%nopex%n" />
+
+	<appender name="MAIN_APPENDER" class="ch.qos.logback.core.rolling.RollingFileAppender">
+		<append>true</append>
+		<file>${ROOT_DIR}/${MAIN_LOG}.log</file>
+		<encoder>
+			<pattern>${PATTERN_DEFAULT}</pattern>
+		</encoder>
+		<rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+			<fileNamePattern>${ROOT_DIR}/${MAIN_LOG}-%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+			<timeBasedFileNamingAndTriggeringPolicy
+				class="ch.qos.logback.core.rolling.SizeAndTimeBasedFNATP">
+				<maxFileSize>10MB</maxFileSize>
+			</timeBasedFileNamingAndTriggeringPolicy>
+		</rollingPolicy>
+	</appender>
+
+	<logger name="todo" level="DEBUG" additivity="false">
+		<appender-ref ref="MAIN_APPENDER" />
+	</logger>
+
+	<root level="ERROR">
+		<appender-ref ref="MAIN_APPENDER" />
+	</root>
+
+</configuration>

@@ -1,0 +1,110 @@
+name: elasticsearch-microservice
+
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.4.8
+    container_name: elasticsearch
+    # Restarted on boot by podman-restart.service (see README); a container stopped by hand stays stopped
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ingest.geoip.downloader.enabled=false
+      - ES_JAVA_OPTS=-Xms1g -Xmx1g
+    # Heap above plus off-heap memory; the container can never use more than this
+    mem_limit: 2g
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:9.4.8
+    container_name: kibana
+    restart: unless-stopped
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - TELEMETRY_OPTIN=false
+      - TELEMETRY_ALLOWCHANGINGOPTINSTATUS=false
+      - NEWSFEED_ENABLED=false
+    # Playground, Agent Builder and Security (Attack discovery, Launchpad) are plugins whose menu entries are not
+    # controlled by space features, so kibana-setup cannot hide them. Their settings are not mapped from env vars by the
+    # image, so they are passed as flags; the image's start script must stay first.
+    command:
+      - /usr/local/bin/kibana-docker
+      - --xpack.searchPlayground.enabled=false
+      - --xpack.agentBuilder.enabled=false
+      - --xpack.securitySolution.enabled=false
+    ports:
+      - "127.0.0.1:5601:5601"
+    networks:
+      - backend
+      - frontend
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+
+  # One-shot: hides every Kibana feature except KIBANA_KEEP_FEATURES, opens Discover by default and shows dates as
+  # ISO 8601 in the log servers' time zone, then exits.
+  # Runs on every `up` and is idempotent; reuses the Kibana image for its bundled Node.js.
+  kibana-setup:
+    image: docker.elastic.co/kibana/kibana:9.4.8
+    container_name: kibana-setup
+    entrypoint: ["/usr/share/kibana/node/default/bin/node", "/setup/kibana-setup.mjs"]
+    environment:
+      - KIBANA_URL=http://kibana:5601
+      - KIBANA_KEEP_FEATURES=discover_v2,indexPatterns,dev_tools,savedQueryManagement
+      - KIBANA_DEFAULT_ROUTE=/app/discover
+      # moment.js syntax; applied on every `up`, so changes made in Advanced Settings are reset
+      - KIBANA_DATE_FORMAT=YYYY-MM-DDTHH:mm:ss.SSS
+      - KIBANA_DATE_NANOS_FORMAT=YYYY-MM-DDTHH:mm:ss.SSSSSSSSS
+      # Zone all dates are shown in, for every viewer; the log servers' zone, so times match what they wrote
+      - KIBANA_TIME_ZONE=Europe/Zagreb
+    volumes:
+      - ./kibana/kibana-setup.mjs:/setup/kibana-setup.mjs:ro,z
+    networks:
+      - backend
+    depends_on:
+      - kibana
+    restart: "no"
+
+  app:
+    build:
+      context: .
+      dockerfile: Containerfile
+    image: localhost/elasticsearch-microservice:latest
+    pull_policy: build
+    container_name: elasticsearch-microservice
+    environment:
+      - SPRING_ELASTICSEARCH_URIS=http://elasticsearch:9200
+      - SPRING_PROFILES_ACTIVE=container
+      - SERVER_PORT=8085
+      - REMOTE_LOG_USERNAME=${REMOTE_LOG_USERNAME}
+      - REMOTE_LOG_PASSWORD=${REMOTE_LOG_PASSWORD}
+    ports:
+      - "127.0.0.1:8085:8085"
+    networks:
+      - backend
+      - egress
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  es-data:
+
+networks:
+  # No gateway: Elasticsearch has no route to the internet
+  backend:
+    internal: true
+  # The app's only route out, for the remote log service
+  egress:
+  # Lets Kibana publish its port to the host
+  frontend:

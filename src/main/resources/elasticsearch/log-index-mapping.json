@@ -1,0 +1,51 @@
+{
+  "mappings": {
+    "dynamic": true,
+    "properties": {
+      "@timestamp": {
+        "type": "date"
+      },
+      "message": {
+        "type": "text"
+      },
+      "log": {
+        "properties": {
+          "level": {
+            "type": "keyword"
+          },
+          "logger": {
+            "type": "keyword"
+          }
+        }
+      },
+      "service": {
+        "properties": {
+          "name": {
+            "type": "keyword"
+          }
+        }
+      },
+      "process": {
+        "properties": {
+          "pid": {
+            "type": "long"
+          },
+          "thread": {
+            "properties": {
+              "name": {
+                "type": "keyword"
+              }
+            }
+          }
+        }
+      },
+      "ecs": {
+        "properties": {
+          "version": {
+            "type": "keyword"
+          }
+        }
+      }
+    }
+  }
+}
