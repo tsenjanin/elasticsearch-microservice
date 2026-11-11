@@ -15,15 +15,14 @@ groups and fetched one group at a time, each source into its own index. Logs are
 
 ## Endpoints
 
-| Method | Path | Profile | What it does |
-|---|---|---|---|
-| `POST` | `/source?group=…&name=…&url=…&index=…` | all | Registers a source in a group (see below; `index` is optional) |
-| `GET` | `/source` | all | Lists all groups with their sources |
-| `DELETE` | `/source?group=…&name=…` | all | Removes one source of a group **and deletes its index with all its logs** |
-| `DELETE` | `/source/group?group=…` | all | Removes a whole group: **every source and its index with all its logs** |
-| `POST` | `/log/fetch?group=…&beginDate=yyyy-MM-dd&endDate=yyyy-MM-dd` | all | Imports logs from every source of the group for the date range |
-| `DELETE` | `/log` | all | Deletes logs whose `@timestamp` is older than 5 days, in the index of every source of every group |
-| `POST` | `/log?beginDate=yyyy-MM-dd&endDate=yyyy-MM-dd` | `local` only | Imports the sample files in `src/main/resources/logs` into `application-logs-local` (PoC) |
+| Method | Path | What it does |
+|---|---|---|
+| `POST` | `/source?group=…&name=…&url=…&index=…` | Registers a source in a group (see below; `index` is optional) |
+| `GET` | `/source` | Lists all groups with their sources |
+| `DELETE` | `/source?group=…&name=…` | Removes one source of a group **and deletes its index with all its logs** |
+| `DELETE` | `/source/group?group=…` | Removes a whole group: **every source and its index with all its logs** |
+| `POST` | `/log/fetch?group=…` | Imports today's logs from every source of the group |
+| `DELETE` | `/log` | Deletes logs whose `@timestamp` is older than 5 days, in the index of every source of every group |
 
 ### Sources and groups
 
@@ -62,8 +61,10 @@ Kibana Dev Tools (`DELETE log-source`) and register the sources again. The log i
 
 ### Imports
 
-`group` and both dates are required; the dates are inclusive. `POST /log/fetch` imports only the sources of that
-group (`404` for an unknown group) and returns one entry per source, sorted by name:
+`POST /log/fetch` requires `group` and imports only today's files (the active `.log` and today's rolled archives)
+from the sources of that group (`404` for an unknown group). Each file download waits 500 ms first, so requests to a
+source are spaced out. A fetch returns one entry per source,
+sorted by name:
 
 ```json
 [
@@ -76,11 +77,10 @@ group (`404` for an unknown group) and returns one entry per source, sorted by n
 ```
 
 A failing source does not stop the others: its entry has an `error` and zero counts. Batches stored before the
-failure stay stored and count as `duplicates` on a retry. The local PoC import returns a single entry without
-`source`, `index` and `error`.
+failure stay stored and count as `duplicates` on a retry.
 
 `processed = inserted + duplicates + rejected`. Every line gets an id derived from its content, so re-importing the
-same range never stores a line twice in the same index; already stored lines are counted as `duplicates`. The same
+same day never stores a line twice in the same index; already stored lines are counted as `duplicates`. The same
 line coming from two sources is stored in both indices. Lines that are not valid ECS JSON (missing `@timestamp` /
 `message`, or truncated) are `rejected`.
 
@@ -90,7 +90,7 @@ line coming from two sources is stored in both indices. Lines that are not valid
   the same way a browser would. Links outside the directory of that URL are ignored.
 - `whatever.log`: the active file, plain text, always counted as **today** (in the app's time zone).
 - `whatever-yyyy-MM-dd.N.log.gz`: rolled files, gzip archives of `whatever-yyyy-MM-dd.N.log`. Several per day.
-- Files are selected by the date in their name; files outside the range are never downloaded.
+- Files are selected by the date in their name; files not dated today are never downloaded.
 - Requests use HTTP Basic auth (same as `curl -u username:password`). All sources share one username/password, so
   they are sent to every registered source. Only register hosts you trust with them.
 
@@ -140,7 +140,7 @@ or install `podman-compose` (`sudo dnf install podman-compose`).
 | kibana-setup | `backend` (internal) | none | not reachable; exits after configuring Kibana |
 | app | `backend`, `egress` | yes, for the remote log server | `127.0.0.1:8085` |
 
-In the container the app runs with the `container` profile, so the local PoC import (`POST /log`) is disabled.
+In the container the app runs with the `container` profile.
 
 ### Logs
 

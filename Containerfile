@@ -5,7 +5,7 @@ WORKDIR /build
 COPY pom.xml .
 RUN mvn -B -q dependency:go-offline
 
-# Sample logs are only for local development; keep them out of the image
+# Logback writes the app's own logs into src/main/resources/logs on a host run; keep them out of the image
 COPY src ./src
 RUN rm -rf src/main/resources/logs \
     && mvn -B -q package -DskipTests \
