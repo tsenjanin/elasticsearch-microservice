@@ -1,15 +1,12 @@
 package dev.elasticsearchmicroservice.service;
 
-import dev.elasticsearchmicroservice.dto.InsertLogRequest;
 import dev.elasticsearchmicroservice.dto.InsertLogResponse;
 import dev.elasticsearchmicroservice.dto.LogDocument;
 import dev.elasticsearchmicroservice.dto.LogFile;
 import dev.elasticsearchmicroservice.repository.LogRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.web.server.ResponseStatusException;
 import tools.jackson.core.JacksonException;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.JsonNode;
@@ -18,6 +15,7 @@ import tools.jackson.databind.json.JsonMapper;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.*;
@@ -35,30 +33,25 @@ public class LogImportService {
     private final JsonMapper jsonMapper;
 
     /**
-     * Imports ECS-formatted log lines from the given log files into Elasticsearch, regardless of where the files
-     * come from.
+     * Imports ECS-formatted log lines from the given log files into Elasticsearch.
      * <p>
-     * Only files dated within the requested range are read, one at a time, and documents are sent in batches of
+     * Only files dated on the requested day are read, one at a time, and documents are sent in batches of
      * {@code BULK_BATCH_SIZE}, so memory stays bounded by one file plus one batch even for a full day of logs. Every
      * line gets a deterministic id (SHA-256 of its content); Elasticsearch answers {@code 409} for an id it already
      * holds, so a line repeated within the run or stored in the same index by an earlier run is counted as a
      * duplicate and never inserted twice. Lines that are not valid JSON objects, lack a valid
      * {@code @timestamp} or {@code message}, or are refused by Elasticsearch are rejected.
      *
-     * @param request  import range; {@code beginDate} and {@code endDate} are both required and inclusive
-     * @param logFiles candidate files; their lines are only read when the file is inside the range
+     * @param date     day to import
+     * @param logFiles candidate files; their lines are only read when the file is dated {@code date}
      * @param index    log index of the source the files come from
      * @return counts where {@code processed = inserted + duplicates + rejected}
-     * @throws ResponseStatusException {@code 400} when a date is missing or {@code beginDate} is after
-     *                                 {@code endDate}
      */
-    public InsertLogResponse insertLogs(InsertLogRequest request, List<LogFile> logFiles, String index) {
-        // Validate the range and keep the files whose date falls into it, oldest first
-        validateDateRange(request);
+    public InsertLogResponse insertLogs(LocalDate date, List<LogFile> logFiles, String index) {
+        // Keep the files of the requested day, in rolling order with the active file last
         var selectedFiles = logFiles.stream()
-                .filter(logFile -> !logFile.getDate().isBefore(request.getBeginDate())
-                        && !logFile.getDate().isAfter(request.getEndDate()))
-                .sorted(Comparator.comparing(LogFile::getDate).thenComparing(LogFile::getIndex))
+                .filter(logFile -> logFile.getDate().equals(date))
+                .sorted(Comparator.comparing(LogFile::getIndex))
                 .toList();
 
         // Parse every non-blank line and insert full batches as they fill up
@@ -92,28 +85,9 @@ public class LogImportService {
         if (!batch.isEmpty()) {
             insertBatch(batch, counts, indexReady, index);
         }
-        log.info("Imported logs from '{}' to '{}' into '{}': '{}'.",
-                request.getBeginDate(), request.getEndDate(), index, counts);
+        log.info("Imported logs for '{}' into '{}': '{}'.", date, index, counts);
 
         return counts;
-    }
-
-    /**
-     * Checks that both dates are present and that {@code beginDate} is not after {@code endDate}.
-     *
-     * @param request import request to validate
-     * @throws ResponseStatusException {@code 400} when the range is incomplete or reversed
-     */
-    public void validateDateRange(InsertLogRequest request) {
-        if (request.getBeginDate() == null || request.getEndDate() == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Both beginDate and endDate are required.");
-        }
-        if (request.getBeginDate().isAfter(request.getEndDate())) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "beginDate '%s' is after endDate '%s'.".formatted(request.getBeginDate(), request.getEndDate())
-            );
-        }
     }
 
     /**

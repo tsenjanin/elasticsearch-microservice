@@ -2,7 +2,6 @@ package dev.elasticsearchmicroservice.service;
 
 import dev.elasticsearchmicroservice.client.RemoteLogClient;
 import dev.elasticsearchmicroservice.dto.InsertGroupLogRequest;
-import dev.elasticsearchmicroservice.dto.InsertLogRequest;
 import dev.elasticsearchmicroservice.dto.InsertSourceLogResponse;
 import dev.elasticsearchmicroservice.dto.LogFile;
 import dev.elasticsearchmicroservice.dto.SourceSummary;
@@ -17,6 +16,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -35,45 +35,44 @@ public class RemoteLogService {
     private final SourceService sourceService;
 
     /**
-     * Imports logs from every source of one group, each into that source's own index.
+     * Imports today's logs from every source of one group, each into that source's own index.
      * <p>
      * Each source serves an HTML directory listing; every {@code href} is resolved against the source's URL. The
      * active {@code whatever.log} is plain text and counts as today; rolled files are
      * {@code whatever-yyyy-MM-dd.i.log.gz}, gzip archives of {@code whatever-yyyy-MM-dd.i.log}. Only files dated
-     * within the range are downloaded. Parsing, deduplication and insertion are done by
-     * {@link LogImportService#insertLogs}.
+     * today are downloaded, each after a pause of {@code REMOTE_REQUEST_DELAY} so requests to a source are spaced
+     * out. Parsing, deduplication and insertion are done by {@link LogImportService#insertLogs}.
      * <p>
      * A source that fails (unreachable, corrupt archive, oversized file) does not stop the others; its entry carries
      * the error and zero counts. Batches stored before the failure stay stored and count as duplicates on a retry.
      *
-     * @param request group and import range; {@code beginDate} and {@code endDate} are both required and inclusive
+     * @param request group to fetch
      * @return one entry per source of the group, sorted by source name
-     * @throws org.springframework.web.server.ResponseStatusException {@code 400} for a missing group or a missing or
-     *                                                                reversed range; {@code 404} for an unknown
-     *                                                                group
+     * @throws org.springframework.web.server.ResponseStatusException {@code 400} for a missing group; {@code 404} for
+     *                                                                an unknown group
      * @throws UncheckedIOException                                   when the sources cannot be listed
      */
     public List<InsertSourceLogResponse> insertRemoteLogs(InsertGroupLogRequest request) {
-        logImportService.validateDateRange(request);
         var sources = sourceService.getSourcesForGroup(request.getGroup());
+        var today = LocalDate.now();
 
         return sources.stream()
-                .map(source -> insertSourceLogs(request, source))
+                .map(source -> insertSourceLogs(today, source))
                 .toList();
     }
 
     /**
      * Imports the logs of one source and reports its counts, or the failure that stopped it.
      *
-     * @param request import range, already validated
-     * @param source  source to import from
+     * @param date   day to import
+     * @param source source to import from
      * @return counts for the source, or zero counts and the error message when the import failed
      */
-    private InsertSourceLogResponse insertSourceLogs(InsertLogRequest request, SourceSummary source) {
+    private InsertSourceLogResponse insertSourceLogs(LocalDate date, SourceSummary source) {
         try {
             var url = URI.create(source.getUrl());
             var listing = remoteLogClient.getLogListing(url);
-            var counts = logImportService.insertLogs(request, getLogFiles(listing, url), source.getIndex());
+            var counts = logImportService.insertLogs(date, getLogFiles(listing, url), source.getIndex());
 
             return InsertSourceLogResponse.builder()
                     .source(source.getName())
@@ -155,12 +154,28 @@ public class RemoteLogService {
      * @return all lines, including blank ones
      */
     private List<String> downloadLines(URI uri, Boolean compressed) {
+        pause(uri);
         var content = remoteLogClient.getLogFile(uri);
         var bytes = compressed ? gunzip(uri, content) : content;
 
         return new String(bytes, StandardCharsets.UTF_8)
                 .lines()
                 .toList();
+    }
+
+    /**
+     * Waits {@code REMOTE_REQUEST_DELAY} before a download, so consecutive requests to a source are spaced out.
+     *
+     * @param uri file about to be downloaded, used in error messages
+     * @throws IllegalStateException when the thread is interrupted while waiting; the interrupt flag is restored
+     */
+    private void pause(URI uri) {
+        try {
+            Thread.sleep(REMOTE_REQUEST_DELAY);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while waiting to download '%s'.".formatted(uri), e);
+        }
     }
 
     /**

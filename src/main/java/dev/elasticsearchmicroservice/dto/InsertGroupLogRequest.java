@@ -1,16 +1,14 @@
 package dev.elasticsearchmicroservice.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.AllArgsConstructor;
 import lombok.Data;
-import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
-import lombok.ToString;
 
 @Data
+@AllArgsConstructor
 @NoArgsConstructor
-@EqualsAndHashCode(callSuper = true)
-@ToString(callSuper = true)
-public class InsertGroupLogRequest extends InsertLogRequest {
+public class InsertGroupLogRequest {
     @Schema(
             description = "Group whose sources are fetched",
             example = "prod",

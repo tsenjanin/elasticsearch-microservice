@@ -17,7 +17,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.stream.Collectors;
 
-import static dev.elasticsearchmicroservice.constant.LogConstants.LOCAL_LOG_INDEX;
 import static dev.elasticsearchmicroservice.constant.LogConstants.LOG_INDEX_PREFIX;
 import static dev.elasticsearchmicroservice.constant.SourceConstants.*;
 
@@ -274,7 +273,7 @@ public class SourceService {
                     "Index '%s' matches the built-in data stream pattern 'logs-*-*'.".formatted(index)
             );
         }
-        if (SOURCE_INDEX.equals(index) || LOCAL_LOG_INDEX.equals(index)) {
+        if (SOURCE_INDEX.equals(index)) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
                     "Index '%s' is reserved.".formatted(index)

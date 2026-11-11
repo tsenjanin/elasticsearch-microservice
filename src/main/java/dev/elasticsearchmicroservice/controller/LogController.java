@@ -25,25 +25,23 @@ public class LogController {
     private final RemoteLogService remoteLogService;
 
     /**
-     * Imports logs from every source of one group, downloading only files dated between {@code beginDate} and
-     * {@code endDate}.
+     * Imports today's logs from every source of one group.
      *
-     * @param request group and import range bound from the {@code group}, {@code beginDate} and {@code endDate}
-     *                query parameters
+     * @param request group bound from the {@code group} query parameter
      * @return {@code 201} with processed, inserted, duplicate and rejected counts per source
      */
     @PostMapping("fetch")
     @Operation(
-            summary = "Import remote logs",
+            summary = "Import today's remote logs",
             description = """
-                    For every source of the group, reads its HTML listing, then downloads and imports the files whose \
-                    date is between beginDate and endDate (inclusive) into the source's index. The active .log file \
-                    is plain text and counts as today; rolled files are gzip archives. Duplicates within a source's \
+                    For every source of the group, reads its HTML listing, then downloads and imports today's files \
+                    into the source's index: the active .log file (plain text, counts as today) and today's rolled \
+                    gzip archives. Downloads from a source are spaced 500 ms apart. Duplicates within a source's \
                     index are skipped and invalid or partial lines are rejected. A failing source does not stop the \
                     others; its entry carries the error."""
     )
     @ApiResponse(responseCode = "201", description = "Logs imported; see each entry's error for failed sources")
-    @ApiResponse(responseCode = "400", description = "Missing group, missing date or beginDate after endDate")
+    @ApiResponse(responseCode = "400", description = "Missing group")
     @ApiResponse(responseCode = "404", description = "Unknown group")
     public ResponseEntity<List<InsertSourceLogResponse>> insertRemoteLogs(
             @ParameterObject @ModelAttribute InsertGroupLogRequest request) {
@@ -53,7 +51,7 @@ public class LogController {
     }
 
     /**
-     * Deletes logs older than 5 days from the index of every source and from the local import index.
+     * Deletes logs older than 5 days from the index of every source.
      *
      * @return {@code 200} with the number of deleted logs
      */
