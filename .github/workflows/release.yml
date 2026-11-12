@@ -1,0 +1,96 @@
+# Releases when a push to main carries a new version: pom.xml at X.Y.Z, higher than the latest v* tag, with a matching
+# '## [X.Y.Z]' entry at the top of CHANGELOG.md. See .github/scripts/release-check.sh for the rules.
+# The tag and the GitHub release are created last, so a failed test or build leaves nothing behind and can be rerun.
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  IMAGE: ghcr.io/tsenjanin/elasticsearch-microservice
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+
+      - name: Check version
+        id: check
+        run: bash .github/scripts/release-check.sh
+
+      - name: Test
+        if: steps.check.outputs.release == 'true'
+        run: mvn -B test
+
+      - uses: docker/setup-buildx-action@v4
+        if: steps.check.outputs.release == 'true'
+
+      - uses: docker/login-action@v4
+        if: steps.check.outputs.release == 'true'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image metadata
+        id: meta
+        if: steps.check.outputs.release == 'true'
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=semver,pattern={{version}},value=${{ steps.check.outputs.version }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ steps.check.outputs.version }}
+            type=raw,value=latest
+
+      - name: Build and push image
+        if: steps.check.outputs.release == 'true'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Containerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Pack deploy bundle
+        id: bundle
+        if: steps.check.outputs.release == 'true'
+        env:
+          VERSION: ${{ steps.check.outputs.version }}
+        run: |
+          bundle="$RUNNER_TEMP/elasticsearch-microservice-deploy-$VERSION.tar.gz"
+          tar -czf "$bundle" docker-compose.yml kibana/kibana-setup.mjs .env.example
+          echo "path=$bundle" >> "$GITHUB_OUTPUT"
+
+      - name: Create tag and release
+        if: steps.check.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.check.outputs.version }}
+          NOTES: ${{ steps.check.outputs.notes_file }}
+          BUNDLE: ${{ steps.bundle.outputs.path }}
+        run: >
+          gh release create "v$VERSION" "$BUNDLE"
+          --target "$GITHUB_SHA"
+          --title "v$VERSION"
+          --notes-file "$NOTES"

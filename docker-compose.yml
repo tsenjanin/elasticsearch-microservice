@@ -74,12 +74,9 @@ services:
       - kibana
     restart: "no"
 
+  # Released image; APP_VERSION in .env pins the version. For a build from source, add -f docker-compose.build.yml.
   app:
-    build:
-      context: .
-      dockerfile: Containerfile
-    image: localhost/elasticsearch-microservice:latest
-    pull_policy: build
+    image: ghcr.io/tsenjanin/elasticsearch-microservice:${APP_VERSION:?set APP_VERSION in .env}
     container_name: elasticsearch-microservice
     environment:
       - SPRING_ELASTICSEARCH_URIS=http://elasticsearch:9200
