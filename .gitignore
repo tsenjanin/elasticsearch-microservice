@@ -31,7 +31,7 @@ build/
 ### VS Code ###
 .vscode/
 
-### Runtime logs (written by logback) ###
+### Logs written by host runs with src/main/resources/examples/logback.xml ###
 src/main/resources/logs/
 
 ### Secrets ###

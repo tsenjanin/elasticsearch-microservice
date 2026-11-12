@@ -1,4 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+	Example only: shows the ECS JSON format and file rolling (whatever.log + whatever-yyyy-MM-dd.i.log.gz) that this
+	service expects from the remote log servers. It is outside the classpath root, so neither Spring Boot nor logback
+	loads it; the app itself uses Spring Boot's default console logging. To try it on a host run, start the app with
+	logging.config=classpath:examples/logback.xml (it writes into src/main/resources/logs, so not in the container).
+-->
 <configuration scan="true" scanPeriod="30 seconds">
 
 	<contextName>todo</contextName>

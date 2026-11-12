@@ -5,10 +5,8 @@ WORKDIR /build
 COPY pom.xml .
 RUN mvn -B -q dependency:go-offline
 
-# Logback writes the app's own logs into src/main/resources/logs on a host run; keep them out of the image
 COPY src ./src
-RUN rm -rf src/main/resources/logs \
-    && mvn -B -q package -DskipTests \
+RUN mvn -B -q package -DskipTests \
     && cp target/*.jar app.jar
 
 FROM docker.io/library/eclipse-temurin:25.0.4.1_1-jre
