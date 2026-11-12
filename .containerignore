@@ -5,3 +5,5 @@ target/
 .claude/
 .env
 *.iml
+# Log files left by host runs with the example logback config; must not end up in the jar
+src/main/resources/logs/

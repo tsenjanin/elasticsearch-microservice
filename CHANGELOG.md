@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 A push to `main` releases when `pom.xml` is at a new `X.Y.Z` and the newest entry below is `## [X.Y.Z] - YYYY-MM-DD`
 (see "Releasing" in the README).
 
+## [0.1.1] - 12.11.2026.
+
+### Fixed
+- The app container no longer exits on startup (so Swagger UI and the API are reachable again). Logback tried to
+  write `src/main/resources/logs` under the read-only `/app`; the example `logback.xml` moved to
+  `src/main/resources/examples/` and is no longer loaded. The app logs to the console, so `podman logs` shows them.
+
 ## [0.1.0] - 12.11.2026.
 
 First release, planned as `0.1.0`.
