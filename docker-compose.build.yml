@@ -1,0 +1,10 @@
+# Builds the app from the source in this checkout instead of pulling a released image. Development only:
+#   podman compose -f docker-compose.yml -f docker-compose.build.yml up -d --build app
+# Not named docker-compose.override.yml on purpose, so it is never loaded automatically on a server.
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Containerfile
+    image: localhost/elasticsearch-microservice:dev
+    pull_policy: build

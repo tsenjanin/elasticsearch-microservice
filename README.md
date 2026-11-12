@@ -105,22 +105,60 @@ line coming from two sources is stored in both indices. Lines that are not valid
 
 Where to put the values:
 
-- **Compose stack:** `.env` in the project root (`cp .env.example .env`, then edit).
+- **Compose stack:** `.env` in the project root (`cp .env.example .env`, then edit). It also holds `APP_VERSION`,
+  the released app image the stack runs (see [Deploy a release](#deploy-a-release)).
 - **Local run:** `application-local.properties` in the project root, loaded with the `local` profile.
 
 Both files hold credentials and are git-ignored; neither ends up in the container image.
 
-## Run with podman compose
+## Deploy a release
 
-Runs Elasticsearch, Kibana and the app. The first `up` builds the app image, which needs internet access for the
-base images and Maven dependencies.
+Each [GitHub release](https://github.com/tsenjanin/elasticsearch-microservice/releases) publishes the image
+`ghcr.io/tsenjanin/elasticsearch-microservice:X.Y.Z` and attaches `elasticsearch-microservice-deploy-X.Y.Z.tar.gz`
+with everything a server needs: `docker-compose.yml`, `kibana/kibana-setup.mjs` and `.env.example`. No source code,
+Maven or build step is needed on the server.
 
 ```bash
-cp .env.example .env              # once, then fill in REMOTE_LOG_USERNAME / REMOTE_LOG_PASSWORD
-podman compose up -d              # start (builds the app image if missing)
-podman compose up -d --build app  # rebuild and restart the app after code changes
+mkdir elasticsearch-microservice && cd elasticsearch-microservice
+tar -xzf ~/Downloads/elasticsearch-microservice-deploy-0.1.0.tar.gz
+cp .env.example .env              # fill in REMOTE_LOG_USERNAME / REMOTE_LOG_PASSWORD, set APP_VERSION=0.1.0
+podman compose up -d
 podman compose ps                 # status; elasticsearch should be "healthy"
 ```
+
+`APP_VERSION` is required; without it compose stops with `set APP_VERSION in .env`.
+
+### Update or roll back
+
+The server only changes version when `APP_VERSION` is changed.
+
+1. Read the release notes (or [CHANGELOG.md](CHANGELOG.md)); entries marked **Breaking** may need changes in the
+   callers of the API.
+2. Set `APP_VERSION` in `.env` to the new version.
+3. Pull and restart the app:
+
+   ```bash
+   podman compose pull app && podman compose up -d app
+   ```
+
+To roll back, put the previous version back into `APP_VERSION` and run the same command. Stored logs in the `es-data`
+volume are not touched by either. When a release changes `docker-compose.yml` or `kibana-setup.mjs` (the release notes
+say so), unpack that release's bundle over the old files first, keeping `.env`.
+
+## Run with podman compose
+
+Runs Elasticsearch, Kibana and the app from this checkout. Without extra flags it pulls the released image named by
+`APP_VERSION`. To run your own code instead, add `-f docker-compose.build.yml`, which builds the image from source
+(needs internet access for the base images and Maven dependencies).
+
+```bash
+cp .env.example .env              # once, then fill in REMOTE_LOG_USERNAME / REMOTE_LOG_PASSWORD and APP_VERSION
+podman compose up -d              # start with the released image
+podman compose -f docker-compose.yml -f docker-compose.build.yml up -d --build app   # build and run this checkout
+podman compose ps                 # status; elasticsearch should be "healthy"
+```
+
+Going back from a source build to the released image: `podman compose up -d --force-recreate app`.
 
 If `podman compose` fails with `failed to connect to the docker API at unix:///run/user/1000/podman/podman.sock`,
 start the Podman socket once:
@@ -206,8 +244,36 @@ Run it from the project root so `application-local.properties` is picked up.
 mvn compile                                             # build
 mvn test                                                # tests
 mvn clean install -DskipTests                           # clean build of the jar
-podman build -f Containerfile -t localhost/elasticsearch-microservice:latest .   # image only
+podman build -f Containerfile -t localhost/elasticsearch-microservice:dev .   # image only
 ```
+
+## Releasing
+
+Releases are made by GitHub Actions; nobody tags by hand. Every PR to `main` runs the tests and the version check
+(`.github/workflows/ci.yml`). Every push to `main` runs `.github/workflows/release.yml`, which releases only when the
+version in `pom.xml` is new:
+
+| `pom.xml` version | Result |
+|---|---|
+| ends in `-SNAPSHOT` or is not plain `X.Y.Z` | skipped, work in progress |
+| already tagged `vX.Y.Z` | skipped, already released |
+| lower than the latest `v*` tag | **fails**: the version went backwards |
+| higher than the latest tag, but the newest `CHANGELOG.md` entry is not `## [X.Y.Z]` | **fails**: add the entry |
+| higher than the latest tag (or no tag yet) with a matching, non-empty entry | **released** |
+
+To release:
+
+1. In a PR, set `<version>` in `pom.xml` to `X.Y.Z` and rename `## [Unreleased]` in `CHANGELOG.md` to
+   `## [X.Y.Z] - YYYY-MM-DD` (add a fresh empty `## [Unreleased]` above it). Mark breaking changes with **Breaking**.
+2. Merge it to `main`. The workflow tests, pushes `ghcr.io/tsenjanin/elasticsearch-microservice` with the tags
+   `X.Y.Z`, `X.Y` and `latest`, then creates tag `vX.Y.Z` and the GitHub release with that CHANGELOG section as notes
+   and the deploy bundle attached.
+3. If a step fails, nothing is tagged; fix it and rerun the workflow (Actions → Release → Run workflow).
+
+Use `0.x` versions while this is a proof of concept: breaking changes bump the minor number, fixes the patch number.
+
+One-time setup on GitHub: after the first release, open the `elasticsearch-microservice` package and set its
+visibility to public (Package settings → Change visibility), otherwise servers need `podman login ghcr.io`.
 
 ## Kibana
 
